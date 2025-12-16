@@ -26,38 +26,50 @@ USER_AGENTS = [
 # --- 2. HELPER FUNCTIONS ---
 
 async def get_file_size(url):
-    """URL से फाइल का साइज पता करने की कोशिश करता है"""
     try:
         async with aiohttp.ClientSession() as session:
             async with session.head(url) as resp:
                 if 'Content-Length' in resp.headers:
                     return int(resp.headers['Content-Length'])
-    except:
-        pass
+    except: pass
     return 0
 
-async def download_file_smart(url, filename, status_msg):
-    """
-    अगर फाइल <50MB है तो डाउनलोड करेगा।
-    अगर >50MB है तो False रिटर्न करेगा (ताकि हम लिंक भेज सकें)।
-    """
-    try:
-        # Step 1: पहले हेड चेक करें (बिना डाउनलोड किये)
-        size = await get_file_size(url)
-        if size > MAX_FILE_SIZE:
-            return "TOO_BIG"
+async def get_caption_smart(link):
+    """yt-dlp से ओरिजिनल कैप्शन निकालता है (बिना डाउनलोड किए)"""
+    opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'noplaylist': True,
+        'geo_bypass': True,
+        'user_agent': random.choice(USER_AGENTS),
+    }
+    
+    def _extract():
+        try:
+            with YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(link, download=False)
+                return info.get('description') or info.get('title') or ""
+        except Exception as e:
+            return None
 
-        # Step 2: अगर हेड में साइज नहीं मिला, तो डाउनलोड करते समय चेक करें
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _extract)
+
+async def download_file_smart(url, filename, status_msg):
+    try:
+        size = await get_file_size(url)
+        if size > MAX_FILE_SIZE: return "TOO_BIG"
+
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
                 downloaded = 0
                 with open(filename, 'wb') as f:
-                    async for chunk in resp.content.iter_chunked(1024 * 1024): # 1MB chunks
+                    async for chunk in resp.content.iter_chunked(1024 * 1024):
                         downloaded += len(chunk)
                         if downloaded > MAX_FILE_SIZE:
                             f.close()
                             os.remove(filename)
-                            return "TOO_BIG" # 50MB होते ही रोक दो
+                            return "TOO_BIG"
                         f.write(chunk)
                 return "DOWNLOADED"
     except Exception as e:
@@ -65,61 +77,40 @@ async def download_file_smart(url, filename, status_msg):
         return "ERROR"
 
 async def try_cobalt(link):
-    """Cobalt API से डायरेक्ट लिंक लाता है"""
     headers = {"Accept": "application/json", "Content-Type": "application/json"}
     payload = {"url": link, "vCodec": "h264", "vQuality": "720", "aFormat": "mp3", "filenamePattern": "classic"}
-    
     for api_url in COBALT_INSTANCES:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(api_url, json=payload, headers=headers, timeout=10) as response:
                     if response.status == 200:
                         data = await response.json()
-                        if data.get('status') in ['stream', 'redirect']:
-                            return data.get('url')
-                        elif data.get('status') == 'picker':
-                            return data.get('picker')[0]['url']
-        except:
-            continue 
+                        if data.get('status') in ['stream', 'redirect']: return data.get('url')
+                        elif data.get('status') == 'picker': return data.get('picker')[0]['url']
+        except: continue 
     return None
 
 async def try_ytdlp_smart(link):
-    """
-    yt-dlp से पहले Info निकालता है, अगर साइज कम है तो डाउनलोड करता है,
-    अगर ज्यादा है तो डायरेक्ट URL देता है।
-    """
-    opts = {
-        'format': 'best[ext=mp4]',
-        'quiet': True,
-        'noplaylist': True,
-        'geo_bypass': True,
-        'user_agent': random.choice(USER_AGENTS),
-    }
-
+    opts = {'format': 'best[ext=mp4]', 'quiet': True, 'noplaylist': True, 'geo_bypass': True, 'user_agent': random.choice(USER_AGENTS)}
     loop = asyncio.get_running_loop()
     
     def get_info():
         with YoutubeDL(opts) as ydl:
-            # download=False का मतलब सिर्फ डेटा लाओ, डाउनलोड मत करो
             return ydl.extract_info(link, download=False)
 
     try:
         info = await loop.run_in_executor(None, get_info)
-        
-        # साइज चेक करें
         filesize = info.get('filesize') or info.get('filesize_approx') or 0
         direct_url = info.get('url')
+        caption = info.get('description') or info.get('title')
 
         if filesize > MAX_FILE_SIZE:
-            return {"type": "link", "url": direct_url, "size": filesize}
+            return {"type": "link", "url": direct_url, "size": filesize, "caption": caption}
         else:
-            # अगर फाइल छोटी है, तो डाउनलोड करें
             filename = f"{os.getcwd()}/{int(time.time())}_{random.randint(100,999)}.mp4"
-            # हमें आउटपुट फाइलनेम सेट करना होगा
             opts['outtmpl'] = filename
             await loop.run_in_executor(None, lambda: YoutubeDL(opts).download([link]))
-            return {"type": "file", "path": filename}
-            
+            return {"type": "file", "path": filename, "caption": caption}
     except Exception as e:
         print(f"yt-dlp Error: {e}")
         return None
@@ -129,83 +120,94 @@ async def try_ytdlp_smart(link):
 @Client.on_message(filters.regex(r'https?://.*(instagram|youtu\.be|youtube|facebook|fb\.watch|tiktok)[^\s]+') & filters.incoming)
 async def link_handler(Mbot, message):
     link = message.matches[0].group(0)
-    status_msg = await message.reply("🔄 Analyzing Link & Size...")
+    status_msg = await message.reply("🔄 Fetching Content...")
     
-    caption = f"Downloaded By @{Mbot.me.username}"
+    # कैप्शन निकालना शुरू करें
+    original_caption_task = asyncio.create_task(get_caption_smart(link))
+    
     final_file_path = None
     direct_link_to_send = None
     
     try:
         # --- METHOD 1: Cobalt API ---
         direct_url = await try_cobalt(link)
-        
         if direct_url:
             temp_path = f"{os.getcwd()}/{int(time.time())}_cobalt.mp4"
             result = await download_file_smart(direct_url, temp_path, status_msg)
-            
             if result == "DOWNLOADED":
                 final_file_path = temp_path
             elif result == "TOO_BIG":
-                direct_link_to_send = direct_url # फाइल बड़ी है, डायरेक्ट लिंक सेव कर लो
-            # अगर ERROR आया तो अगला मेथड ट्राई करेंगे
+                direct_link_to_send = direct_url
 
-        # --- METHOD 2: yt-dlp (अगर Cobalt फेल हुआ या Cobalt ने लिंक नहीं दिया) ---
+        # --- METHOD 2: yt-dlp ---
         if not final_file_path and not direct_link_to_send:
-            if "youtu" in link: await status_msg.edit("🐢 Checking YouTube Data...")
-            
+            if "youtu" in link: await status_msg.edit("🐢 Using yt-dlp...")
             ytdlp_result = await try_ytdlp_smart(link)
-            
             if ytdlp_result:
                 if ytdlp_result["type"] == "file":
                     final_file_path = ytdlp_result["path"]
                 elif ytdlp_result["type"] == "link":
                     direct_link_to_send = ytdlp_result["url"]
+        
+        # --- CAPTION CONSTRUCTION (With Hyperlink) ---
+        original_caption = await original_caption_task
+        
+        # सिर्फ हाइपरलिंक वाला फूटर
+        footer_text = f"[🔗 Source Link]({link}) | Downloaded By @{Mbot.me.username}"
+        
+        if original_caption:
+            # कैप्शन को 800 शब्दों तक सीमित रखें ताकि टेलीग्राम एरर न दे
+            truncated_caption = (original_caption[:800] + '...') if len(original_caption) > 800 else original_caption
+            final_caption = f"{truncated_caption}\n\n{footer_text}"
+        else:
+            final_caption = footer_text
 
-        # --- ACTION: Upload or Send Link ---
+        # --- ACTION: Upload ---
 
         if final_file_path and os.path.exists(final_file_path):
-            # CASE A: फाइल 50MB से छोटी है -> अपलोड करो
-            await status_msg.edit("📤 Uploading (Size < 50MB)...")
-            sent_msg = await message.reply_video(final_file_path, caption=caption)
+            await status_msg.edit("📤 Uploading...")
             
+            # मैंने यहाँ बटन भी रखा है (आप चाहे तो reply_markup वाली लाइन हटा सकते हैं)
+            # लेकिन बटन + हाइपरलिंक दोनों होना बेस्ट होता है।
+            source_btn = InlineKeyboardMarkup([[InlineKeyboardButton("↗️ Open Post", url=link)]])
+
+            sent_msg = await message.reply_video(
+                final_file_path, 
+                caption=final_caption,
+                reply_markup=source_btn
+            )
+            
+            # Insta Channel में कॉपी
             if INSTA_CHANNEL:
                 try:
                     user_link = f"User: {message.from_user.mention}\nLink: {link}"
-                    await sent_msg.copy(INSTA_CHANNEL, caption=f"{caption}\n\n{user_link}")
+                    await sent_msg.copy(INSTA_CHANNEL, caption=f"{final_caption}\n\n{user_link}")
                 except: pass
             
             await status_msg.delete()
             os.remove(final_file_path)
 
         elif direct_link_to_send:
-            # CASE B: फाइल 50MB से बड़ी है -> लिंक भेजो
-            
-            # YouTube लिंक्स के साथ कभी-कभी IP issue होता है, तो हम ओरिजिनल लिंक भी दे देते हैं
             text = (
-                f"⚠️ **File is too large (>50MB).**\n"
-                f"I cannot upload it to Telegram.\n\n"
-                f"📥 **Direct Download Link:**\n[Click Here to Download]({direct_link_to_send})\n\n"
-                f"🔗 _If above link fails, use source:_ {link}"
+                f"⚠️ **File >50MB.**\n"
+                f"📥 **Direct Link:**\n[Click to Download]({direct_link_to_send})\n\n"
+                f"🔗 [Original Post]({link})"
             )
-            # लिंक बटन के साथ भेजें
-            btn = InlineKeyboardMarkup([[InlineKeyboardButton("📥 Download Video", url=direct_link_to_send)]])
-            
+            btn = InlineKeyboardMarkup([[InlineKeyboardButton("📥 Download", url=direct_link_to_send)]])
             await status_msg.edit(text, reply_markup=btn, disable_web_page_preview=True)
             
         else:
-            # CASE C: कुछ नहीं मिला
             if "instagram.com" in link:
                 dd_url = link.replace("instagram.com", "ddinstagram.com")
-                await status_msg.edit(f"⚠️ Failed or Too Big. Try Direct:\n{dd_url}")
+                await status_msg.edit(f"⚠️ Failed. Try Direct:\n{dd_url}")
             else:
-                await status_msg.edit("❌ Unable to fetch video or extract link.")
+                await status_msg.edit("❌ Unable to fetch content.")
 
     except Exception as e:
         print(f"Global Error: {e}")
         await status_msg.edit(f"Error: {e}")
     
     finally:
-        # अगर कोई कचरा बचा है तो साफ़ करो
         if final_file_path and os.path.exists(final_file_path):
             os.remove(final_file_path)
 
