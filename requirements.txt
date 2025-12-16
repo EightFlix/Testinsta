@@ -1,6 +1,8 @@
 hydrogram
 tgcrypto
+yt-dlp
 pymongo
+dnspython
 cinemagoer
 shortzy
 aiohttp
@@ -11,3 +13,5 @@ requests
 qrcode
 Pillow
 pytz
+motor
+
