@@ -1,4 +1,5 @@
-from pyrogram import filters, Client
+from hydrogram import filters, Client
+from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import aiohttp
 import os
 import time
@@ -178,7 +179,6 @@ async def link_handler(Mbot, message):
 
         elif direct_link_to_send:
             # CASE B: फाइल 50MB से बड़ी है -> लिंक भेजो
-            size_mb = "50MB+" 
             
             # YouTube लिंक्स के साथ कभी-कभी IP issue होता है, तो हम ओरिजिनल लिंक भी दे देते हैं
             text = (
@@ -188,7 +188,6 @@ async def link_handler(Mbot, message):
                 f"🔗 _If above link fails, use source:_ {link}"
             )
             # लिंक बटन के साथ भेजें
-            from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
             btn = InlineKeyboardMarkup([[InlineKeyboardButton("📥 Download Video", url=direct_link_to_send)]])
             
             await status_msg.edit(text, reply_markup=btn, disable_web_page_preview=True)
@@ -209,3 +208,4 @@ async def link_handler(Mbot, message):
         # अगर कोई कचरा बचा है तो साफ़ करो
         if final_file_path and os.path.exists(final_file_path):
             os.remove(final_file_path)
+
