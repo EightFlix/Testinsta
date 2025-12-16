@@ -8,6 +8,7 @@ import datetime
 from Script import script
 from hydrogram import Client, filters, enums
 from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+# delete_files को यहाँ import करना जरुरी है
 from database.ia_filterdb import db_count_documents, second_db_count_documents, get_file_details, delete_files
 from database.users_chats_db import db
 from datetime import datetime, timedelta
@@ -38,17 +39,20 @@ async def start(client, message):
     try:
         await message.react(emoji=random.choice(REACTIONS), big=True)
     except:
-        await message.react(emoji="⚡️", big=True)
+        pass
 
-    d = await client.send_sticker(message.chat.id, random.choice(STICKERS))
-    asyncio.create_task(del_stk(d))
+    try:
+        d = await client.send_sticker(message.chat.id, random.choice(STICKERS))
+        asyncio.create_task(del_stk(d))
+    except:
+        pass
 
     if not await db.is_user_exist(message.from_user.id):
         await db.add_user(message.from_user.id, message.from_user.first_name)
         await client.send_message(LOG_CHANNEL, script.NEW_USER_TXT.format(message.from_user.mention, message.from_user.id))
 
     verify_status = await get_verify_status(message.from_user.id)
-    if verify_status['is_verified'] and datetime.datetime.now() > verify_status['expire_time']:
+    if verify_status['is_verified'] and datetime.now() > verify_status['expire_time']:
         await update_verify_status(message.from_user.id, is_verified=False)
 
 
@@ -66,12 +70,20 @@ async def start(client, message):
             InlineKeyboardButton('🤑 Buy Premium', url=f"https://t.me/{temp.U_NAME}?start=premium")
         ]]
         reply_markup = InlineKeyboardMarkup(buttons)
-        await message.reply_photo(
-            photo=random.choice(PICS),
-            caption=script.START_TXT.format(message.from_user.mention, get_wish()),
-            reply_markup=reply_markup,
-            parse_mode=enums.ParseMode.HTML
-        )
+        try:
+            await message.reply_photo(
+                photo=random.choice(PICS),
+                caption=script.START_TXT.format(message.from_user.mention, get_wish()),
+                reply_markup=reply_markup,
+                parse_mode=enums.ParseMode.HTML
+            )
+        except Exception as e:
+            # Fallback if PICS link is broken
+            await message.reply_text(
+                text=script.START_TXT.format(message.from_user.mention, get_wish()),
+                reply_markup=reply_markup,
+                parse_mode=enums.ParseMode.HTML
+            )
         return
 
     mc = message.command[1]
@@ -103,7 +115,7 @@ async def start(client, message):
         verify_status = await get_verify_status(message.from_user.id)
         if verify_status['verify_token'] != token:
             return await message.reply("Your verify token is invalid.")
-        expiry_time = datetime.datetime.now() + datetime.timedelta(seconds=VERIFY_EXPIRE)
+        expiry_time = datetime.now() + timedelta(seconds=VERIFY_EXPIRE)
         await update_verify_status(message.from_user.id, is_verified=True, expire_time=expiry_time)
         if verify_status["link"] == "":
             reply_markup = None
@@ -174,23 +186,29 @@ async def start(client, message):
                     InlineKeyboardButton('⁉️ ᴄʟᴏsᴇ ⁉️', callback_data='close_data')
                 ]]
 
-            msg = await client.send_cached_media(
-                chat_id=message.from_user.id,
-                file_id=file['_id'],
-                caption=f_caption,
-                protect_content=False,
-                reply_markup=InlineKeyboardMarkup(btn)
-            )
-            file_ids.append(msg.id)
+            try:
+                msg = await client.send_cached_media(
+                    chat_id=message.from_user.id,
+                    file_id=file['_id'],
+                    caption=f_caption,
+                    protect_content=False,
+                    reply_markup=InlineKeyboardMarkup(btn)
+                )
+                file_ids.append(msg.id)
+            except Exception as e:
+                # Skip invalid files to prevent crash
+                continue
 
         time = get_readable_time(PM_FILE_DELETE_TIME)
         vp = await message.reply(f"Nᴏᴛᴇ: Tʜɪs ғɪʟᴇs ᴡɪʟʟ ʙᴇ ᴅᴇʟᴇᴛᴇ ɪɴ {time} ᴛᴏ ᴀᴠᴏɪᴅ ᴄᴏᴘʏʀɪɢʜᴛs. Sᴀᴠᴇ ᴛʜᴇ ғɪʟᴇs ᴛᴏ sᴏᴍᴇᴡʜᴇʀᴇ ᴇʟsᴇ")
         await asyncio.sleep(PM_FILE_DELETE_TIME)
         buttons = [[InlineKeyboardButton('ɢᴇᴛ ғɪʟᴇs ᴀɢᴀɪɴ', callback_data=f"get_del_send_all_files#{grp_id}#{key}")]] 
-        await client.delete_messages(
-            chat_id=message.chat.id,
-            message_ids=file_ids + [total_files.id]
-        )
+        try:
+            await client.delete_messages(
+                chat_id=message.chat.id,
+                message_ids=file_ids + [total_files.id]
+            )
+        except: pass
         await vp.edit("Tʜᴇ ғɪʟᴇ ʜᴀs ʙᴇᴇɴ ɢᴏɴᴇ ! Cʟɪᴄᴋ ɢɪᴠᴇɴ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ɪᴛ ᴀɢᴀɪɴ.", reply_markup=InlineKeyboardMarkup(buttons))
         return
 
@@ -232,21 +250,28 @@ async def start(client, message):
         ],[
             InlineKeyboardButton('⁉️ ᴄʟᴏsᴇ ⁉️', callback_data='close_data')
         ]]
-    vp = await client.send_cached_media(
-        chat_id=message.from_user.id,
-        file_id=file_id,
-        caption=f_caption,
-        protect_content=False,
-        reply_markup=InlineKeyboardMarkup(btn)
-    )
+    
+    try:
+        vp = await client.send_cached_media(
+            chat_id=message.from_user.id,
+            file_id=file_id,
+            caption=f_caption,
+            protect_content=False,
+            reply_markup=InlineKeyboardMarkup(btn)
+        )
+    except Exception as e:
+        return await message.reply(f"❌ **Error:** The file is missing or deleted.\n\n`{e}`")
+
     time = get_readable_time(PM_FILE_DELETE_TIME)
     msg = await vp.reply(f"Nᴏᴛᴇ: Tʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ʙᴇ ᴅᴇʟᴇᴛᴇ ɪɴ {time} ᴛᴏ ᴀᴠᴏɪᴅ ᴄᴏᴘʏʀɪɢʜᴛs. Sᴀᴠᴇ ᴛʜᴇ ғɪʟᴇ ᴛᴏ sᴏᴍᴇᴡʜᴇʀᴇ ᴇʟsᴇ")
     await asyncio.sleep(PM_FILE_DELETE_TIME)
     btns = [[
         InlineKeyboardButton('ɢᴇᴛ ғɪʟᴇ ᴀɢᴀɪɴ', callback_data=f"get_del_file#{grp_id}#{file_id}")
     ]]
-    await msg.delete()
-    await vp.delete()
+    try:
+        await msg.delete()
+        await vp.delete()
+    except: pass
     await vp.reply("Tʜᴇ ғɪʟᴇ ʜᴀs ʙᴇᴇɴ ɢᴏɴᴇ ! Cʟɪᴄᴋ ɢɪᴠᴇɴ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ɪᴛ ᴀɢᴀɪɴ.", reply_markup=InlineKeyboardMarkup(btns))
 
 
@@ -308,8 +333,40 @@ async def stats(bot, message):
 
     uptime = get_readable_time(time_now() - temp.START_TIME)
     await message.reply_text(script.STATUS_TXT.format(users, prm, chats, used_data_db_size, files, used_files_db_size, secnd_files, secnd_files_db_used_size, uptime))    
-    
 
+# --- NEW: DELETE ALL COMMAND (Correctly Added) ---
+@Client.on_message(filters.command("delete_all") & filters.user(ADMINS))
+async def delete_all_command(client, message):
+    if len(message.command) < 2:
+        return await message.reply_text(
+            "⚠️ **Usage:**\n`/delete_all <query>`\n\nExample:\n`/delete_all Spider Man`"
+        )
+    query = message.text.split(None, 1)[1]
+    btn = [[
+        InlineKeyboardButton("✅ Yes, Delete", callback_data=f"delete_confirm_{query}"),
+        InlineKeyboardButton("❌ Cancel", callback_data="close_data")
+    ]]
+    await message.reply_text(
+        f"🚨 **WARNING** 🚨\n\nAre you sure you want to delete all files matching: **'{query}'**?",
+        reply_markup=InlineKeyboardMarkup(btn)
+    )
+
+@Client.on_callback_query(filters.regex(r"^delete_confirm_"))
+async def delete_confirm_handler(client, query):
+    if query.from_user.id not in ADMINS:
+        return await query.answer("Not Admin", show_alert=True)
+    
+    search_query = query.data.split("_", 2)[2]
+    await query.message.edit_text(f"🗑 **Deleting files matching:** `{search_query}`...")
+    
+    deleted_count = await delete_files(search_query)
+    
+    await query.message.edit_text(
+        f"✅ **Deleted Successfully!**\n\n"
+        f"🗑 **Files Removed:** `{deleted_count}`\n"
+        f"🔍 **Query:** `{search_query}`"
+    )
+# -------------------------------------------------
 
 async def get_grp_stg(group_id):
     settings = await get_settings(group_id)
@@ -592,3 +649,4 @@ async def off_pm_search(bot, message):
 async def on_pm_search(bot, message):
     db.update_bot_sttgs('PM_SEARCH', True)
     await message.reply('Successfully turned on pm search for all users')
+
