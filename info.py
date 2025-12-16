@@ -73,13 +73,20 @@ DATA_DATABASE_URL = environ.get('DATA_DATABASE_URL', "")
 if len(DATA_DATABASE_URL) == 0:
     logger.error('DATA_DATABASE_URL is missing, exiting now')
     exit()
+
 FILES_DATABASE_URL = environ.get('FILES_DATABASE_URL', "")
 if len(FILES_DATABASE_URL) == 0:
     logger.error('FILES_DATABASE_URL is missing, exiting now')
     exit()
+
+# ----------- UPDATE HERE -----------
 SECOND_FILES_DATABASE_URL = environ.get('SECOND_FILES_DATABASE_URL', "")
 if len(SECOND_FILES_DATABASE_URL) == 0:
-    logger.info('SECOND_FILES_DATABASE_URL is empty')
+    # अगर दूसरा DB खाली है, तो पहले वाले का ही इस्तेमाल करें
+    SECOND_FILES_DATABASE_URL = FILES_DATABASE_URL
+    logger.info('SECOND_FILES_DATABASE_URL was empty, using FILES_DATABASE_URL instead.')
+# -----------------------------------
+
 DATABASE_NAME = environ.get('DATABASE_NAME', "Cluster0")
 COLLECTION_NAME = environ.get('COLLECTION_NAME', 'Files')
 
@@ -141,9 +148,8 @@ else:
         exit()
 
 #start command reactions and sticker
-REACTIONS = [reactions for reactions in environ.get('REACTIONS', '🤝 😇 🤗 😍 👍 🎅 😐 🥰 🤩 😱 🤣 😘 👏 😛 😈 🎉 ⚡️ 🫡 🤓 😎 🏆 🔥 🤭 🌚 🆒 👻 😁').split()]  # Multiple reactions can be used separated by space
-STICKERS = [sticker for sticker in environ.get('STICKERS', 'CAACAgIAAxkBAAEN4ctnu1NdZUe21tiqF1CjLCZW8rJ28QACmQwAAj9UAUrPkwx5a8EilDYE CAACAgIAAxkBAAEN1pBntL9sz1tuP_qo0bCdLj_xQa28ngACxgEAAhZCawpKI9T0ydt5RzYE').split()]  # Multiple sticker can be used separated by space, use @idstickerbot for get sticker id
-
+REACTIONS = [reactions for reactions in environ.get('REACTIONS', '🤝 😇 🤗 😍 👍 🎅 😐 🥰 🤩 😱 🤣 😘 👏 😛 😈 🎉 ⚡️ 🫡 🤓 😎 🏆 🔥 🤭 🌚 🆒 👻 😁').split()]  
+STICKERS = [sticker for sticker in environ.get('STICKERS', 'CAACAgIAAxkBAAEN4ctnu1NdZUe21tiqF1CjLCZW8rJ28QACmQwAAj9UAUrPkwx5a8EilDYE CAACAgIAAxkBAAEN1pBntL9sz1tuP_qo0bCdLj_xQa28ngACxgEAAhZCawpKI9T0ydt5RzYE').split()] 
 
 # for Premium 
 IS_PREMIUM = is_enabled('IS_PREMIUM', True)
@@ -158,4 +164,4 @@ RECEIPT_SEND_USERNAME = environ.get("RECEIPT_SEND_USERNAME", "@Hansaka_Anuhas")
 if len(UPI_ID) == 0 or len(UPI_NAME) == 0:
     logger.info('IS_PREMIUM disabled due to empty UPI_ID or UPI_NAME')
     IS_PREMIUM = False
-    
+
