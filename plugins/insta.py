@@ -1,5 +1,4 @@
 from hydrogram import filters, Client
-from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import aiohttp
 import os
 import time
@@ -35,7 +34,7 @@ async def get_file_size(url):
     return 0
 
 async def get_caption_smart(link):
-    """yt-dlp से ओरिजिनल कैप्शन निकालता है (बिना डाउनलोड किए)"""
+    """yt-dlp से ओरिजिनल कैप्शन निकालता है"""
     opts = {
         'quiet': True,
         'no_warnings': True,
@@ -122,7 +121,6 @@ async def link_handler(Mbot, message):
     link = message.matches[0].group(0)
     status_msg = await message.reply("🔄 Fetching Content...")
     
-    # कैप्शन निकालना शुरू करें
     original_caption_task = asyncio.create_task(get_caption_smart(link))
     
     final_file_path = None
@@ -149,15 +147,15 @@ async def link_handler(Mbot, message):
                 elif ytdlp_result["type"] == "link":
                     direct_link_to_send = ytdlp_result["url"]
         
-        # --- CAPTION CONSTRUCTION (With Hyperlink) ---
+        # --- CLEAN CAPTION LOGIC ---
         original_caption = await original_caption_task
         
-        # सिर्फ हाइपरलिंक वाला फूटर
-        footer_text = f"[🔗 Source Link]({link}) | Downloaded By @{Mbot.me.username}"
+        # सिर्फ "Source Link" रखेंगे, "Downloaded By" हटा दिया गया है
+        footer_text = f"[🔗 Source Link]({link})"
         
         if original_caption:
-            # कैप्शन को 800 शब्दों तक सीमित रखें ताकि टेलीग्राम एरर न दे
-            truncated_caption = (original_caption[:800] + '...') if len(original_caption) > 800 else original_caption
+            # कैप्शन को 900 शब्दों तक सीमित रखें
+            truncated_caption = (original_caption[:900] + '...') if len(original_caption) > 900 else original_caption
             final_caption = f"{truncated_caption}\n\n{footer_text}"
         else:
             final_caption = footer_text
@@ -167,17 +165,12 @@ async def link_handler(Mbot, message):
         if final_file_path and os.path.exists(final_file_path):
             await status_msg.edit("📤 Uploading...")
             
-            # मैंने यहाँ बटन भी रखा है (आप चाहे तो reply_markup वाली लाइन हटा सकते हैं)
-            # लेकिन बटन + हाइपरलिंक दोनों होना बेस्ट होता है।
-            source_btn = InlineKeyboardMarkup([[InlineKeyboardButton("↗️ Open Post", url=link)]])
-
+            # Button (reply_markup) हटा दिया गया है
             sent_msg = await message.reply_video(
                 final_file_path, 
-                caption=final_caption,
-                reply_markup=source_btn
+                caption=final_caption
             )
             
-            # Insta Channel में कॉपी
             if INSTA_CHANNEL:
                 try:
                     user_link = f"User: {message.from_user.mention}\nLink: {link}"
@@ -188,10 +181,13 @@ async def link_handler(Mbot, message):
             os.remove(final_file_path)
 
         elif direct_link_to_send:
+            # यहाँ बटन रहने दिया है क्योंकि फाइल बड़ी होने पर डाउनलोड करना जरुरी है
+            # अगर यहाँ से भी हटाना हो तो बता देना
+            from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
             text = (
                 f"⚠️ **File >50MB.**\n"
                 f"📥 **Direct Link:**\n[Click to Download]({direct_link_to_send})\n\n"
-                f"🔗 [Original Post]({link})"
+                f"🔗 [Source Link]({link})"
             )
             btn = InlineKeyboardMarkup([[InlineKeyboardButton("📥 Download", url=direct_link_to_send)]])
             await status_msg.edit(text, reply_markup=btn, disable_web_page_preview=True)
