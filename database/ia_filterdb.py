@@ -44,8 +44,8 @@ async def save_file(media):
         logger.warning(f'Already Saved - {file_name}')
         return 'dup'
     except Exception:
-        # Fallback to Second DB if First is Full/Error
-        if second_collection:
+        # FIX: Check explicitly if second_collection is not None
+        if second_collection is not None:
             try:
                 await second_collection.insert_one(document)
                 logger.info(f'Saved to 2nd db - {file_name}')
@@ -82,11 +82,10 @@ async def get_search_results(query, max_results=MAX_BTN, offset=0, lang=None):
 
     # Fetch from DB 1
     cursor = collection.find(filter_q)
-    # Important: to_list is non-blocking
-    results = await cursor.to_list(length=100) # Limit buffer
+    results = await cursor.to_list(length=100)
 
-    # Fetch from DB 2 (if exists)
-    if second_collection:
+    # FIX: Check explicitly if second_collection is not None
+    if second_collection is not None:
         cursor2 = second_collection.find(filter_q)
         results2 = await cursor2.to_list(length=100)
         results.extend(results2)
@@ -129,7 +128,8 @@ async def delete_files(query):
     result1 = await collection.delete_many(filter_q)
     total_deleted = result1.deleted_count
     
-    if second_collection:
+    # FIX: Check explicitly if second_collection is not None
+    if second_collection is not None:
         result2 = await second_collection.delete_many(filter_q)
         total_deleted += result2.deleted_count
     
@@ -138,7 +138,8 @@ async def delete_files(query):
 async def get_file_details(query):
     """Get single file details"""
     file_details = await collection.find_one({'_id': query})
-    if not file_details and second_collection:
+    # FIX: Check explicitly if second_collection is not None
+    if not file_details and second_collection is not None:
         file_details = await second_collection.find_one({'_id': query})
     return file_details
 
@@ -148,11 +149,12 @@ async def db_count_documents():
 
 async def second_db_count_documents():
     """Count files in DB 2"""
-    if second_collection:
+    # FIX: Check explicitly if second_collection is not None
+    if second_collection is not None:
         return await second_collection.count_documents({})
     return 0
 
-# --- File ID Helpers (No Changes Logic) ---
+# --- File ID Helpers ---
 
 def encode_file_id(s: bytes) -> str:
     r = b""
