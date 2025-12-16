@@ -1,4 +1,7 @@
 import logging
+import logging.config
+
+# Logging Setup
 logging.basicConfig(
     level=logging.INFO, 
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -11,19 +14,17 @@ import os
 import time
 import asyncio
 import uvloop
-from hydrogram import types, idle
-from hydrogram import Client
-from hydrogram.errors import FloodWait
+from hydrogram import Client, idle
 from aiohttp import web
-from typing import Union, Optional, AsyncGenerator
 from web import web_app
-from info import INDEX_CHANNELS, SUPPORT_GROUP, LOG_CHANNEL, API_ID, DATA_DATABASE_URL, API_HASH, BOT_TOKEN, PORT, BIN_CHANNEL, ADMINS, SECOND_FILES_DATABASE_URL, FILES_DATABASE_URL
-from utils import temp, get_readable_time, check_premium
+from info import (
+    API_ID, API_HASH, BOT_TOKEN, PORT, 
+    LOG_CHANNEL, ADMINS
+)
+from utils import temp, check_premium
 from database.users_chats_db import db
-from pymongo.mongo_client import MongoClient
-from pymongo.server_api import ServerApi
 
-# Install uvloop
+# Install uvloop for faster async execution
 uvloop.install()
 
 class Bot(Client):
@@ -33,16 +34,19 @@ class Bot(Client):
             api_id=API_ID,
             api_hash=API_HASH,
             bot_token=BOT_TOKEN,
-            plugins={"root": "plugins"}
+            plugins={"root": "plugins"} # ✅ यह लाइन सबसे जरुरी है, इससे insta.py लोड होगा
         )
 
     async def start(self):
         await super().start()
         temp.START_TIME = time.time()
+        
+        # Load Banned Users/Chats
         b_users, b_chats = await db.get_banned()
         temp.BANNED_USERS = b_users
         temp.BANNED_CHATS = b_chats
 
+        # Restart Handler logic
         if os.path.exists('restart.txt'):
             with open("restart.txt") as file:
                 chat_id, msg_id = map(int, file)
@@ -58,35 +62,25 @@ class Bot(Client):
         temp.U_NAME = me.username
         temp.B_NAME = me.first_name
         
+        # Web Server Setup (For Health Check/Koyeb)
         app = web.AppRunner(web_app)
         await app.setup()
         await web.TCPSite(app, "0.0.0.0", PORT).start()
 
         asyncio.create_task(check_premium(self))
+        
+        # Log Channel Notification
         try:
             await self.send_message(chat_id=LOG_CHANNEL, text=f"<b>{me.mention} Restarted! 🤖</b>")
-        except:
-            logger.error("Make sure bot admin in LOG_CHANNEL, exiting now")
-            # Don't exit here, just log error to keep bot running
-            pass 
+        except Exception as e:
+            logger.error(f"Make sure bot admin in LOG_CHANNEL: {e}")
+            
         logger.info(f"@{me.username} is started now ✓")
 
     async def stop(self, *args):
         await super().stop()
         logger.info("Bot Stopped! Bye...")
 
-    async def iter_messages(self: Client, chat_id: Union[int, str], limit: int, offset: int = 0) -> Optional[AsyncGenerator["types.Message", None]]:
-        current = offset
-        while True:
-            new_diff = min(200, limit - current)
-            if new_diff <= 0:
-                return
-            messages = await self.get_messages(chat_id, list(range(current, current+new_diff+1)))
-            for message in messages:
-                yield message
-                current += 1
-
-# ----------- UPDATED RUN CODE -----------
 async def main():
     app = Bot()
     await app.start()
