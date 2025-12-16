@@ -59,6 +59,15 @@ if len(LOG_CHANNEL) == 0:
     exit()
 else:
     LOG_CHANNEL = int(LOG_CHANNEL)
+
+# ----------- UPDATED HERE (INSTA CHANNEL) -----------
+INSTA_CHANNEL = environ.get('INSTA_CHANNEL', '')
+if len(INSTA_CHANNEL) == 0:
+    logger.info('INSTA_CHANNEL is empty (Insta Storage Disabled)')
+    INSTA_CHANNEL = None # ताकी कोड में एरर न आये
+else:
+    INSTA_CHANNEL = int(INSTA_CHANNEL)
+# ----------------------------------------------------
     
 # support group
 SUPPORT_GROUP = environ.get('SUPPORT_GROUP', '')
@@ -79,10 +88,10 @@ if len(FILES_DATABASE_URL) == 0:
     logger.error('FILES_DATABASE_URL is missing, exiting now')
     exit()
 
-# ----------- UPDATE HERE -----------
+# ----------- UPDATE HERE (Dual DB Support) -----------
 SECOND_FILES_DATABASE_URL = environ.get('SECOND_FILES_DATABASE_URL', "")
 if len(SECOND_FILES_DATABASE_URL) == 0:
-    # अगर दूसरा DB खाली है, तो पहले वाले का ही इस्तेमाल करें
+    # अगर दूसरा DB खाली है, तो पहले वाले का ही इस्तेमाल करें (Fallback)
     SECOND_FILES_DATABASE_URL = FILES_DATABASE_URL
     logger.info('SECOND_FILES_DATABASE_URL was empty, using FILES_DATABASE_URL instead.')
 # -----------------------------------
