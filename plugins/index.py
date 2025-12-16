@@ -87,7 +87,8 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot, skip):
     
     async with lock:
         try:
-            async for message in bot.iter_messages(chat, lst_msg_id, skip):
+            # FIX: Changed iter_messages to get_chat_history
+            async for message in bot.get_chat_history(chat_id=chat, offset=skip):
                 time_taken = get_readable_time(time.time()-start_time)
                 if temp.CANCEL:
                     temp.CANCEL = False
@@ -102,7 +103,9 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot, skip):
                         await msg.edit_text(text=f"Total messages received: <code>{current}</code>\nTotal messages saved: <code>{total_files}</code>\nDuplicate Files Skipped: <code>{duplicate}</code>\nDeleted Messages Skipped: <code>{deleted}</code>\nNon-Media messages skipped: <code>{no_media + unsupported}</code>\nUnsupported Media: <code>{unsupported}</code>\nErrors Occurred: <code>{errors}</code>\nBad Files Ignoref: <code>{badfiles}</code>", reply_markup=InlineKeyboardMarkup(btn))
                     except FloodWait as e:
                         await asyncio.sleep(e.value)
-                if message.empty:
+                
+                # FIX: message.empty check removed/updated for Hydrogram
+                if message.service: # Used to be message.empty
                     deleted += 1
                     continue
                 elif not message.media:
@@ -132,3 +135,4 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot, skip):
         else:
             time_taken = get_readable_time(time.time()-start_time)
             await msg.edit(f'Succesfully saved <code>{total_files}</code> to Database!\nCompleted in {time_taken}\n\nDuplicate Files Skipped: <code>{duplicate}</code>\nDeleted Messages Skipped: <code>{deleted}</code>\nNon-Media messages skipped: <code>{no_media + unsupported}</code>\nUnsupported Media: <code>{unsupported}</code>\nErrors Occurred: <code>{errors}</code>\nBad Files Ignoref: <code>{badfiles}</code>')
+
