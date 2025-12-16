@@ -32,8 +32,10 @@ async def pm_search(client, message):
     if message.text.startswith("/"):
         return
     stg = db.get_bot_sttgs()
+    # CRASH FIX: Check if stg exists
     if stg and not stg.get('PM_SEARCH'):
         return await message.reply_text('PM search was disabled!')
+    
     if await is_premium(message.from_user.id, client):
         if stg and not stg.get('AUTO_FILTER'):
             return await message.reply_text('Auto filter was disabled!')
@@ -99,7 +101,6 @@ async def next_page(bot, query):
         files_link += f"""<b>\n\n{file_num}. <a href=https://t.me/{temp.U_NAME}?start=file_{query.message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {file['file_name']}</a></b>"""
 
     btn = []
-    # Filters Restored
     btn.insert(0, [
         InlineKeyboardButton("📰 ʟᴀɴɢᴜᴀɢᴇs", callback_data=f"languages#{key}#{req}#{offset}"),
         InlineKeyboardButton("🔍 ǫᴜᴀʟɪᴛʏ", callback_data=f"quality#{key}#{req}#{offset}")
@@ -153,7 +154,6 @@ async def filter_languages_cb_handler(client: Client, query: CallbackQuery):
         files_link += f"""<b>\n\n{file_num}. <a href=https://t.me/{temp.U_NAME}?start=file_{query.message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {file['file_name']}</a></b>"""
     
     btn = []
-    # No Result Buttons, Only Pagination and Back
     if l_offset != "":
         btn.append([InlineKeyboardButton(text=f"1/{math.ceil(int(total_results) / MAX_BTN)}", callback_data="buttons"), InlineKeyboardButton(text="ɴᴇxᴛ »", callback_data=f"lang_next#{req}#{key}#{lang}#{l_offset}#{offset}")])
     btn.append([InlineKeyboardButton(text="⪻ ʙᴀᴄᴋ", callback_data=f"next_{req}_{key}_{offset}")])
@@ -248,6 +248,13 @@ async def quality_next_page(bot, query):
     btn.append([InlineKeyboardButton(text="⪻ ʙᴀᴄᴋ", callback_data=f"next_{req}_{key}_{offset}")])
     await query.message.edit_text(cap + files_link + del_msg, reply_markup=InlineKeyboardMarkup(btn), disable_web_page_preview=True, parse_mode=enums.ParseMode.HTML)
 
+@Client.on_callback_query(filters.regex(r"^spolling"))
+async def advantage_spoll_choker(bot, query):
+    _, id, user = query.data.split('#')
+    if int(user) != 0 and query.from_user.id != int(user):
+        return await query.answer("Don't Click Other Results!", show_alert=True)
+    await query.answer("Spell check requires IMDb which is disabled.", show_alert=True)
+
 async def auto_filter(client, msg, s, spoll=False):
     if not spoll:
         message = msg
@@ -255,7 +262,10 @@ async def auto_filter(client, msg, s, spoll=False):
         search = re.sub(r"\s+", " ", re.sub(r"[-:\"';!]", " ", message.text)).strip()
         files, offset, total_results = await get_search_results(search)
         if not files:
-            await s.edit(f'I cant find {search}')
+            if settings["spell_check"]:
+                await advantage_spell_chok(message, s)
+            else:
+                await s.edit(f'I cant find {search}')
             return
     else:
         settings = await get_settings(msg.message.chat.id)
@@ -295,6 +305,17 @@ async def auto_filter(client, msg, s, spoll=False):
         try: await message.delete()
         except: pass
 
+async def advantage_spell_chok(message, s):
+    search = message.text
+    google_search = search.replace(" ", "+")
+    btn = [[
+        InlineKeyboardButton("⚠️ Instructions ⚠️", callback_data='instructions'),
+        InlineKeyboardButton("🔎 Search Google 🔍", url=f"https://www.google.com/search?q={google_search}")
+    ]]
+    n = await s.edit_text(text=script.NOT_FILE_TXT.format(message.from_user.mention, search), reply_markup=InlineKeyboardMarkup(btn))
+    await asyncio.sleep(60)
+    await n.delete()
+
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
     if query.data == "close_data":
@@ -306,6 +327,9 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
     elif query.data == "buttons":
         await query.answer()
+
+    elif query.data == "instructions":
+        await query.answer("Check spelling on Google!", show_alert=True)
 
     # --- START / HELP / ABOUT / STATS ---
     elif query.data == "start":
@@ -403,19 +427,17 @@ async def cb_handler(client: Client, query: CallbackQuery):
         btn = await get_grp_stg(query.message.chat.id)
         await query.message.edit(text=f"Settings for <b>'{query.message.chat.title}'</b>", reply_markup=InlineKeyboardMarkup(btn))
 
-    # --- WELCOME / SHORTLINK / CAPTION SETTINGS ---
+    # --- RESTORED ADMIN SETTINGS (Caption, Tutorial, Welcome, Shortlink) ---
     elif query.data.startswith("welcome_setgs"):
         _, grp_id = query.data.split("#")
-        userid = query.from_user.id if query.from_user else None
-        if not await is_check_admin(client, int(grp_id), userid): return await query.answer("Not Admin", show_alert=True)
+        if not await is_check_admin(client, int(grp_id), query.from_user.id): return await query.answer("Not Admin", show_alert=True)
         settings = await get_settings(int(grp_id))
         btn = [[InlineKeyboardButton('Set Welcome', callback_data=f'set_welcome#{grp_id}')],[InlineKeyboardButton('Default', callback_data=f'default_welcome#{grp_id}')],[InlineKeyboardButton('Back', callback_data=f'back_setgs#{grp_id}')]]
         await query.message.edit(f'Current Welcome:\n{settings["welcome_text"]}', reply_markup=InlineKeyboardMarkup(btn))
 
     elif query.data.startswith("set_welcome"):
         _, grp_id = query.data.split("#")
-        userid = query.from_user.id if query.from_user else None
-        if not await is_check_admin(client, int(grp_id), userid): return await query.answer("Not Admin", show_alert=True)
+        if not await is_check_admin(client, int(grp_id), query.from_user.id): return await query.answer("Not Admin", show_alert=True)
         m = await query.message.edit('Send Welcome text:')
         msg = await client.listen(chat_id=query.message.chat.id, user_id=query.from_user.id)
         await save_group_settings(int(grp_id), 'welcome_text', msg.text)
@@ -427,8 +449,51 @@ async def cb_handler(client: Client, query: CallbackQuery):
         if not await is_check_admin(client, int(grp_id), query.from_user.id): return await query.answer("Not Admin", show_alert=True)
         await save_group_settings(int(grp_id), 'welcome_text', script.WELCOME_TEXT)
         await query.message.edit('Welcome reset to default.', reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('Back', callback_data=f'welcome_setgs#{grp_id}')]]))
+    
+    elif query.data.startswith("caption_setgs"):
+        _, grp_id = query.data.split("#")
+        if not await is_check_admin(client, int(grp_id), query.from_user.id): return await query.answer("Not Admin", show_alert=True)
+        settings = await get_settings(int(grp_id))
+        btn = [[InlineKeyboardButton('Set Caption', callback_data=f'set_caption#{grp_id}')],[InlineKeyboardButton('Default', callback_data=f'default_caption#{grp_id}')],[InlineKeyboardButton('Back', callback_data=f'back_setgs#{grp_id}')]]
+        await query.message.edit(f'Current Caption:\n{settings["caption"]}', reply_markup=InlineKeyboardMarkup(btn))
 
-    # Shortlink Settings
+    elif query.data.startswith("set_caption"):
+        _, grp_id = query.data.split("#")
+        if not await is_check_admin(client, int(grp_id), query.from_user.id): return await query.answer("Not Admin", show_alert=True)
+        m = await query.message.edit('Send Caption:')
+        msg = await client.listen(chat_id=query.message.chat.id, user_id=query.from_user.id)
+        await save_group_settings(int(grp_id), 'caption', msg.text)
+        await m.delete()
+        await query.message.reply('Caption changed!', reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('Back', callback_data=f'caption_setgs#{grp_id}')]]))
+
+    elif query.data.startswith("default_caption"):
+        _, grp_id = query.data.split("#")
+        if not await is_check_admin(client, int(grp_id), query.from_user.id): return await query.answer("Not Admin", show_alert=True)
+        await save_group_settings(int(grp_id), 'caption', script.FILE_CAPTION)
+        await query.message.edit('Caption reset.', reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('Back', callback_data=f'caption_setgs#{grp_id}')]]))
+
+    elif query.data.startswith("tutorial_setgs"):
+        _, grp_id = query.data.split("#")
+        if not await is_check_admin(client, int(grp_id), query.from_user.id): return await query.answer("Not Admin", show_alert=True)
+        settings = await get_settings(int(grp_id))
+        btn = [[InlineKeyboardButton('Set Tutorial', callback_data=f'set_tutorial#{grp_id}')],[InlineKeyboardButton('Default', callback_data=f'default_tutorial#{grp_id}')],[InlineKeyboardButton('Back', callback_data=f'back_setgs#{grp_id}')]]
+        await query.message.edit(f'Current Tutorial:\n{settings["tutorial"]}', reply_markup=InlineKeyboardMarkup(btn), disable_web_page_preview=True)
+
+    elif query.data.startswith("set_tutorial"):
+        _, grp_id = query.data.split("#")
+        if not await is_check_admin(client, int(grp_id), query.from_user.id): return await query.answer("Not Admin", show_alert=True)
+        m = await query.message.edit('Send Tutorial URL:')
+        msg = await client.listen(chat_id=query.message.chat.id, user_id=query.from_user.id)
+        await save_group_settings(int(grp_id), 'tutorial', msg.text)
+        await m.delete()
+        await query.message.reply('Tutorial changed!', reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('Back', callback_data=f'tutorial_setgs#{grp_id}')]]))
+
+    elif query.data.startswith("default_tutorial"):
+        _, grp_id = query.data.split("#")
+        if not await is_check_admin(client, int(grp_id), query.from_user.id): return await query.answer("Not Admin", show_alert=True)
+        await save_group_settings(int(grp_id), 'tutorial', TUTORIAL)
+        await query.message.edit('Tutorial reset.', reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('Back', callback_data=f'tutorial_setgs#{grp_id}')]]))
+
     elif query.data.startswith("shortlink_setgs"):
         _, grp_id = query.data.split("#")
         if not await is_check_admin(client, int(grp_id), query.from_user.id): return await query.answer("Not Admin", show_alert=True)
@@ -462,4 +527,37 @@ async def cb_handler(client: Client, query: CallbackQuery):
         if not await is_check_admin(client, int(grp_id), userid): return await query.answer("Not Admin", show_alert=True)
         btn = await get_grp_stg(int(grp_id))
         await query.message.edit(text=f"Settings for <b>Group</b>", reply_markup=InlineKeyboardMarkup(btn))
+
+    # --- MEMBER MANAGEMENT (Kick/Mute/Unban) ---
+    elif query.data == "unmute_all_members":
+        if not await is_check_admin(client, query.message.chat.id, query.from_user.id): return await query.answer("Not Admin", show_alert=True)
+        await query.message.edit("Unmuting all...")
+        users_id = [member.user.id async for member in client.get_chat_members(query.message.chat.id, filter=enums.ChatMembersFilter.RESTRICTED)]
+        for user_id in users_id: await client.unban_chat_member(query.message.chat.id, user_id)
+        await query.message.delete()
+        await query.message.reply(f"Unmuted {len(users_id)} users.")
+
+    elif query.data == "unban_all_members":
+        if not await is_check_admin(client, query.message.chat.id, query.from_user.id): return await query.answer("Not Admin", show_alert=True)
+        await query.message.edit("Unbanning all...")
+        users_id = [member.user.id async for member in client.get_chat_members(query.message.chat.id, filter=enums.ChatMembersFilter.BANNED)]
+        for user_id in users_id: await client.unban_chat_member(query.message.chat.id, user_id)
+        await query.message.delete()
+        await query.message.reply(f"Unbanned {len(users_id)} users.")
+
+    elif query.data == "kick_muted_members":
+        if not await is_check_admin(client, query.message.chat.id, query.from_user.id): return await query.answer("Not Admin", show_alert=True)
+        await query.message.edit("Kicking muted...")
+        users_id = [member.user.id async for member in client.get_chat_members(query.message.chat.id, filter=enums.ChatMembersFilter.RESTRICTED)]
+        for user_id in users_id: await client.ban_chat_member(query.message.chat.id, user_id, datetime.now() + timedelta(seconds=30))
+        await query.message.delete()
+        await query.message.reply(f"Kicked {len(users_id)} muted users.")
+
+    elif query.data == "kick_deleted_accounts_members":
+        if not await is_check_admin(client, query.message.chat.id, query.from_user.id): return await query.answer("Not Admin", show_alert=True)
+        await query.message.edit("Kicking deleted accounts...")
+        users_id = [member.user.id async for member in client.get_chat_members(query.message.chat.id) if member.user.is_deleted]
+        for user_id in users_id: await client.ban_chat_member(query.message.chat.id, user_id, datetime.now() + timedelta(seconds=30))
+        await query.message.delete()
+        await query.message.reply(f"Kicked {len(users_id)} deleted accounts.")
 
